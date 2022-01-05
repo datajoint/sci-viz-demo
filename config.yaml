@@ -4,7 +4,10 @@ SciViz:
     mode: database
   extra_components:
     config: |
-      from pharus.component_interface import type_map, PlotPlotlyStoredjsonComponent
+      from pharus.component_interface import type_map, PlotPlotlyStoredjsonComponent, QueryComponent
+      import minio
+      import io
+      from flask import send_file
 
       class PlotPlotlyRemoveFirst(PlotPlotlyStoredjsonComponent):
           def dj_query_route(self):
@@ -14,7 +17,23 @@ SciViz:
               plotly_json['data'] = [plotly_json['data'][1]]
               return plotly_json
 
-      type_map = dict({'plot:plotly:remove_first': PlotPlotlyRemoveFirst}, **type_map)
+      class FileImageS3Ibl(QueryComponent):
+          def __init__(self, *args, **kwargs):
+              super().__init__(*args, **kwargs)
+              self.frontend_map = {
+                  "source": "sci-viz/src/Components/Image.tsx",
+                  "target": "Image",
+              }
+
+          def dj_query_route(self):
+              fetch_metadata = self.fetch_metadata
+              myS3Path = (fetch_metadata['query'] & self.restriction).fetch1(
+                  *fetch_metadata['fetch_args'])
+              s3_client = minio.Minio(endpoint="s3.amazonaws.com", access_key="", secret_key="", secure=True)
+              result = s3_client.get_object(bucket_name='ibl-dj-external-public', object_name=myS3Path)
+              return send_file(io.BytesIO(result.data), attachment_filename='brain.gif', mimetype='image/gif')
+
+      type_map = dict({'plot:plotly:remove_first': PlotPlotlyRemoveFirst, 'file:image:s3:ibl': FileImageS3Ibl}, **type_map)
   pages:
     Home:
       route: /home
@@ -187,9 +206,33 @@ SciViz:
                         keep_all_rows=True)
                     q = (ibl_acquisition.Session * subj).proj('session_lab', 'task_protocol')
                     return dict(query=q, fetch_args=[])
-            session reaction time description:
+            session gif description:
               x: 1
               y: 2
+              height: 3
+              width: 1
+              type: markdown
+              text: |
+                ## GIF Description
+
+                This represents specific attributes of this session that we'd like to highlight
+                as metadata.
+            session gif:
+              route: /session_gif_query
+              x: 0
+              y: 2
+              height: 3
+              width: 1
+              type: file:image:s3:ibl
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(ibl_plotting_histology):
+                    return dict(query=ibl_plotting_histology.SubjectSpinningBrain, fetch_args=['subject_spinning_brain_link'])
+            session reaction time description:
+              x: 1
+              y: 5
               height: 3
               width: 1
               type: markdown
@@ -205,7 +248,7 @@ SciViz:
             session reaction time:
               route: /session_plot_query
               x: 0
-              y: 2
+              y: 5
               height: 3
               width: 1
               type: plot:plotly:stored_json
@@ -217,7 +260,7 @@ SciViz:
                     return dict(query=ibl_plotting_behavior.SessionReactionTimeTrialNumber, fetch_args=['plotting_data'])
             session custom reaction time description:
               x: 1
-              y: 5
+              y: 8
               height: 3
               width: 1
               type: markdown
@@ -246,7 +289,7 @@ SciViz:
             session custom reaction time:
               route: /session_custom_plot_query
               x: 0
-              y: 5
+              y: 8
               height: 3
               width: 1
               type: plot:plotly:remove_first
