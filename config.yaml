@@ -1,7 +1,6 @@
 version: '0.0.0'
 SciViz:
-  auth:
-    mode: database
+  auth: False
   component_interface:
     static_variables:
       s3_host: $CUSTOM_S3_HOST|s3.amazonaws.com
@@ -11,10 +10,85 @@ SciViz:
       s3_bucket: $CUSTOM_S3_BUCKET|bucket_name
     override: |
       from pharus.component_interface import (type_map, PlotPlotlyStoredjsonComponent,
-                                              FileImageAttachComponent)
+                                              FileImageAttachComponent, NumpyEncoder)
       import minio
       import io
       from flask import send_file
+
+      class DepthPeth(PlotPlotlyStoredjsonComponent):
+          def dj_query_route(self):
+              fetch_metadata = self.fetch_metadata
+              record = (fetch_metadata['query'] & self.restriction).fetch(limit=1,
+                  *fetch_metadata['fetch_args'])
+              s3_client = minio.Minio(endpoint=self.static_variables['s3_host'],
+                                          region=self.static_variables['s3_region'],
+                                          access_key=self.static_variables['s3_access_key'],
+                                          secret_key=self.static_variables['s3_secret_key'],
+                                          secure=True)
+              peth_template = record[0][11]
+              color_scale = record[0][10]
+              z_range = record[0][9]
+              plot_xlim = record[0][8]
+              plot_ylim = record[0][7]
+              link = record[0][6]
+              compiled_link = s3_client.presigned_get_object(self.static_variables['s3_bucket'], link)
+              event = record[0][3]
+              
+              peth_template['data'][0]['x'] = [plot_xlim[0]-0.2, plot_xlim[0]-0.1]
+              peth_template['data'][0]['y'] = [plot_ylim[0]-0.2]
+              peth_template['data'][0]['z'] = z_range
+              peth_template['data'][0]['colorscale'] = color_scale
+              peth_template['layout']['images'][0]['source'] = compiled_link
+              peth_template['layout']['images'][0]['sizex'] = plot_xlim[1] - plot_xlim[0]
+              peth_template['layout']['images'][0]['sizey'] = plot_ylim[1] - plot_ylim[0]
+              peth_template['layout']['images'][0]['x'] = plot_xlim[0]
+              peth_template['layout']['images'][0]['y'] = plot_ylim[1]
+              peth_template['layout']['xaxis']['range'] = plot_xlim
+              peth_template['layout']['yaxis']['range'] = plot_ylim
+              peth_template['layout']['title']['text'] = f"Depth PETH, aligned to {event} time"
+              return NumpyEncoder.dumps(peth_template)
+
+      class TrialDepthRaster(PlotPlotlyStoredjsonComponent):
+          def dj_query_route(self):
+              fetch_metadata = self.fetch_metadata
+              record = (fetch_metadata['query'] & self.restriction).fetch(limit=1,
+                  *fetch_metadata['fetch_args'])
+              s3_client = minio.Minio(endpoint=self.static_variables['s3_host'],
+                                          region=self.static_variables['s3_region'],
+                                          access_key=self.static_variables['s3_access_key'],
+                                          secret_key=self.static_variables['s3_secret_key'],
+                                          secure=True)
+              
+              tdr_template = record[0][15]
+              trial_contrast = record[0][13]
+              trial_feedback = record[0][12]
+              trial_movement = record[0][11]
+              trial_stim_off = record[0][10]
+              trial_stim_on = record[0][9]
+              plot_title = record[0][8]
+              plot_xlim = record[0][7]
+              plot_ylim = record[0][6]
+              link = record[0][5]
+              compiled_link = s3_client.presigned_get_object(self.static_variables['s3_bucket'], link)
+              tdr_template['data'][0]['x'] = plot_xlim
+              tdr_template['data'][0]['y'] = plot_ylim
+              tdr_template['data'][1]['x'] = [trial_stim_on, trial_stim_on]
+              tdr_template['data'][1]['y'] = plot_ylim
+              tdr_template['data'][2]['x'] = [trial_movement, trial_movement]
+              tdr_template['data'][2]['y'] = plot_ylim
+              tdr_template['data'][3]['x'] = [trial_feedback, trial_feedback]
+              tdr_template['data'][3]['y'] = plot_ylim
+              tdr_template['data'][4]['x'] = [trial_stim_off, trial_stim_off]
+              tdr_template['data'][4]['y'] = plot_ylim
+              tdr_template['layout']['xaxis']['range'] = plot_xlim
+              tdr_template['layout']['yaxis']['range'] = plot_ylim
+              tdr_template['layout']['title']['text'] = plot_title
+              tdr_template['layout']['images'][0]['source'] = compiled_link
+              tdr_template['layout']['images'][0]['sizex'] = plot_xlim[1] - plot_xlim[0]
+              tdr_template['layout']['images'][0]['sizey'] = plot_ylim[1] - plot_ylim[0]
+              tdr_template['layout']['images'][0]['x'] = plot_xlim[0]
+              tdr_template['layout']['images'][0]['y'] = plot_ylim[1]
+              return NumpyEncoder.dumps(tdr_template)
 
       class PlotPlotlyRemoveFirst(PlotPlotlyStoredjsonComponent):
           def dj_query_route(self):
@@ -40,7 +114,9 @@ SciViz:
               return send_file(io.BytesIO(result.data), download_name=s3_relpath)
       
       type_map = dict({'plot:plotly:remove_first': PlotPlotlyRemoveFirst,
-                       'file:image:s3:global_pointer': FileImageS3GlobalPointerComponent},
+                       'file:image:s3:global_pointer': FileImageS3GlobalPointerComponent,
+                       'plot:DepthPeth': DepthPeth,
+                       'plot:TrialDepthRaster': TrialDepthRaster},
                       **type_map)
   pages:
     Home:
@@ -297,7 +373,7 @@ SciViz:
               route: /session_gif_query
               x: 0
               y: 8
-              height: 2
+              height: 5
               width: 1
               type: file:image:s3:global_pointer
               restriction: >
@@ -351,6 +427,84 @@ SciViz:
                 type_map = dict({'file:image:s3:global_pointer': FileImageS3GlobalPointerComponent},
                                 **type_map)
                 ```
+        newgrid:
+          type: fixed
+          columns: 3
+          row_height: 80
+          components:
+            mybuttons:
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: radiobuttons
+              channel: mybuttons
+              content:
+                feedback: 'event=feedback'
+                movement: 'event=movement'
+                stim on: 'event=stim on'
+            depthPETH:
+              x: 0
+              y: 1
+              height: 6
+              width: 1
+              type: plot:DepthPeth
+              channels: [mybuttons]
+              route: /depthpeth
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(ibl_plotting_ephys):
+                    q = ibl_plotting_ephys.DepthPeth * ibl_plotting_ephys.DepthPethTemplate
+                    return dict(query=q, fetch_args=[])
+            TrialDepthRaster:
+              route: /TrialDepthRaster
+              x: 1
+              y: 1
+              height: 10
+              width: 2
+              type: plot:TrialDepthRaster
+              channels: [rasterslider, sliderbuttons]
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(ibl_plotting_ephys):
+                    q = ibl_plotting_ephys.DepthRasterExampleTrial * ibl_plotting_ephys.DepthRasterTemplate
+                    return dict(query=q, fetch_args=[])
+            rasterslider:
+              x: 1
+              y: 0
+              height: 1
+              width: 1
+              route: /rasterslider
+              type: slider
+              channels: [sliderbuttons]
+              channel: rasterslider
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(ibl_plotting_ephys):
+                    q = ibl_plotting_ephys.DepthRasterExampleTrial
+                    return dict(query=q, fetch_args=['subject_uuid', 'session_start_time', 'probe_idx', 'trial_id', 'trial_contrast'])
+            sliderbuttons:
+              x: 2
+              y: 0
+              height: 1
+              width: 1
+              type: dropdown-static
+              channel: sliderbuttons
+              content:
+                '-1': 'trial_contrast=-1'
+                '-0.25': 'trial_contrast=-0.25'
+                '-0.125': 'trial_contrast=-0.125'
+                '-0.0625': 'trial_contrast=-0.0625'
+                '0.0625': 'trial_contrast=0.0625'
+                '0.125': 'trial_contrast=0.125'
+                '0.25': 'trial_contrast=0.25'
+                '1': 'trial_contrast=1'
     Psychometric Curves:
       route: /psychometric_curves
       grids:
@@ -408,4 +562,3 @@ SciViz:
               dj_query: >
                 def dj_query(ibl_plotting_behavior):
                     return dict(query=ibl_plotting_behavior.SessionPsychCurve(), fetch_args=['plotting_data'])
-
