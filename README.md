@@ -1,3 +1,8 @@
+> [!WARNING]
+> **This repository is archived and no longer maintained** (November 2026), together with [SciViz](https://github.com/datajoint/sci-viz), which it demonstrates.
+>
+> The demo was built for DataJoint 0.13 and 0.14 and has not been updated for DataJoint 2.x. See the [DataJoint documentation](https://docs.datajoint.com) for DataJoint 2.x.
+
 # DataJoint™ powered visualization that adapts to *your* workflows
 
 ![](https://images.squarespace-cdn.com/content/v1/60e5a50c0632d17c36f6b2d3/1638463454411-SMVPVS9EBPLU9T9T5YMN/unsplash-image-Pyut03Gn98w.jpg?format=1000w)
